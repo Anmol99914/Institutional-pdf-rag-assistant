@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+data/uploads/*
+data/processed/*
+vector_store/*
+!data/uploads/.gitkeep
+!data/processed/.gitkeep
+!vector_store/.gitkeep
+venv/
+.ipynb_checkpoints/

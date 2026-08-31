@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Institutional PDF RAG Assistant</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; }
+        h1 { font-size: 1.5em; }
+        .section { margin-bottom: 30px; padding: 15px; border: 1px solid #ddd; border-radius: 6px; }
+        .message { color: #2a6; font-weight: bold; }
+        .error { color: #c33; font-weight: bold; }
+        .sources { font-size: 0.9em; color: #555; margin-top: 10px; }
+        textarea, input[type="file"] { width: 100%; margin-bottom: 10px; }
+        button { padding: 8px 16px; }
+    </style>
+</head>
+<body>
+    <h1>Institutional PDF RAG Assistant</h1>
+
+    <div class="section">
+        <h3>1. Upload Documents</h3>
+        <form action="/upload" method="post" enctype="multipart/form-data">
+            <input type="file" name="pdf_files" multiple accept=".pdf">
+            <button type="submit">Upload & Process</button>
+        </form>
+        {% if upload_message %}<p class="message">{{ upload_message }}</p>{% endif %}
+        <p>Currently processed: {{ processed_file_count }} document(s).</p>
+    </div>
+
+    <div class="section">
+        <h3>2. Ask a Question</h3>
+        <form action="/ask" method="post">
+            <textarea name="question" rows="2" placeholder="Ask a question about your uploaded documents..."></textarea>
+            <button type="submit">Ask</button>
+        </form>
+        {% if ask_error %}<p class="error">{{ ask_error }}</p>{% endif %}
+    </div>
+
+    {% if answer %}
+<div class="section">
+    <h3>Answer</h3>
+    <p><strong>Q:</strong> {{ question }}</p>
+    <p>{{ answer }}</p>
+
+    {% if not low_confidence and sources %}
+    <div class="sources">
+        <strong>Sources:</strong>
+        <ul>
+            {% for s in sources %}
+            <li>{{ s.source }} — Page {{ s.page }} (similarity: {{ s.score }})</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <form action="/feedback" method="post" style="margin-top: 10px;">
+        <input type="hidden" name="interaction_id" value="{{ interaction_id }}">
+        <button type="submit" name="vote" value="helpful">👍 Helpful</button>
+        <button type="submit" name="vote" value="not_helpful">👎 Not helpful</button>
+    </form>
+</div>
+{% endif %}
+
+{% if feedback_message %}
+<p class="message">{{ feedback_message }}
+
+</p>{% endif %}
+
+</body>
+</html>
