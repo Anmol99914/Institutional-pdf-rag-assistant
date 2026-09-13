@@ -22,7 +22,8 @@ This project deliberately does **not** implement any recommendation, prediction,
 - PDF upload and text extraction with page-level metadata preserved
 - Text cleaning (whitespace normalization, zero-width character removal)
 - Word-based chunking with configurable size/overlap, chunked per-page to keep citations accurate
-- Sentence-embedding generation using `all-MiniLM-L6-v2`
+- Page-aware Markdown checkpoint written before chunking, so extracted text can be manually verified for accuracy prior to indexing
+ - Sentence-embedding generation using `all-MiniLM-L6-v2`
 - FAISS cosine-similarity vector index, persisted to disk and reloaded on restart
 - Similarity-threshold-based low-confidence detection, in addition to LLM-level grounding refusal
 - Gemini-based grounded answer generation with explicit instructions not to use outside knowledge
@@ -49,7 +50,9 @@ This project deliberately does **not** implement any recommendation, prediction,
 flowchart TD
     A[User uploads PDFs] --> B[PyMuPDF text + page extraction]
     B --> C[Text cleaning]
-    C --> D[Chunking per page, word-based with overlap]
+    C --> CM[Markdown checkpoint: saved as page-aware .md file]
+    CM --> CR[Markdown re-read from disk]
+    CR --> D[Chunking per page, word-based with overlap]
     D --> E[Sentence Transformer embeddings]
     E --> F[FAISS index, saved to disk]
 
@@ -65,6 +68,9 @@ flowchart TD
     O --> P[(SQLite: interactions + feedback log)]
     K --> P
 ```
+### Markdown Verification Checkpoint
+
+Before chunking, extracted text is written to a page-aware Markdown file (`data/markdown/<filename>.md`), with page boundaries marked as `# Page N`. This file is a verbatim serialization of what PyMuPDF extracted — no cleanup, correction, or reformatting is applied — so extraction accuracy can be manually inspected before it reaches the rest of the pipeline. The chunker reads from this Markdown file rather than from the in-memory extraction output, making the `.md` file the actual source of truth for indexing, not just an export.
 
 ## Installation
 
@@ -118,7 +124,7 @@ Results will be added here once testing is complete. No results are claimed prio
 
 - Tested against a small number of PDFs (1–5); has not been evaluated at larger document-collection scale.
 - The similarity threshold for low-confidence detection is a heuristic default (0.35), not a rigorously tuned value — it acts as a practical safeguard, not a hallucination-prevention guarantee.
-- Rebuilds the entire FAISS index from all files in the uploads folder on every upload, rather than incrementally updating it — simple and reliable at this scale, but not efficient for large document sets.
+- Incremental indexing is filename-based: a PDF is only skipped if its exact filename was already indexed, so a renamed duplicate (or an unrelated file that happens to share a filename) is not detected as such.
 - No authentication or multi-user support; designed for single-user local demonstration.
 - Chunking is word-based and per-page; a fact split across a page boundary may occasionally be only partially retrieved.
 - Embedding model runs locally and unauthenticated against Hugging Face Hub, which may hit rate limits under heavy use (non-blocking for this scale).
@@ -129,5 +135,5 @@ Results will be added here once testing is complete. No results are claimed prio
 - Tune the similarity threshold empirically using evaluation results.
 - Consider incremental (non-rebuild) index updates if document volume grows.
 - Add OCR support for scanned (non-text) PDFs.
-- Improve chunking to reduce fact-splitting across page boundaries where possible.
+- Investigate retrieval sensitivity to short/acronym-only queries (e.g. bare "RPC") versus full natural-language questions, as part of the formal evaluation.
 - Expand the UI to show processing status per file and support document removal.

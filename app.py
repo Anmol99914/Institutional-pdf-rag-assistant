@@ -31,8 +31,7 @@ processed_file_count = len(set(c["source"] for c in vector_store.metadata)) if v
 @app.route("/")
 def index():
     return render_template("index.html", processed_file_count=processed_file_count)
-
-
+        
 @app.route("/upload", methods=["POST"])
 def upload():
     global vector_store, processed_file_count
@@ -53,18 +52,24 @@ def upload():
         return render_template("index.html", processed_file_count=processed_file_count,
                                 upload_message="No valid PDF files were uploaded.")
 
-    store, num_files, num_chunks = build_index_from_uploads(UPLOAD_DIR, INDEX_PATH, METADATA_PATH)
+    result = build_index_from_uploads(UPLOAD_DIR, INDEX_PATH, METADATA_PATH)
 
-    if store is None:
+    if result["store"] is None:
         return render_template("index.html", processed_file_count=processed_file_count,
                                 upload_message="Upload succeeded but no extractable text was found.")
 
-    vector_store = store
-    processed_file_count = num_files
+    vector_store = result["store"]
+    processed_file_count = result["total_files"]
+
+    if result["new_files"] > 0:
+        message = (f"{result['new_files']} new document(s) processed "
+                   f"({result['new_chunks']} new chunks indexed). "
+                   f"{result['total_files']} document(s) total.")
+    else:
+        message = "No new documents to process (already indexed)."
 
     return render_template("index.html", processed_file_count=processed_file_count,
-                            upload_message=f"{num_files} document(s) processed successfully ({num_chunks} chunks indexed).")
-
+                            upload_message=message)
 
 @app.route("/ask", methods=["POST"])
 def ask():
