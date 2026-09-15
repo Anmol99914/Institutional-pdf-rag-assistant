@@ -1,69 +1,90 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Institutional PDF RAG Assistant</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; }
-        h1 { font-size: 1.5em; }
-        .section { margin-bottom: 30px; padding: 15px; border: 1px solid #ddd; border-radius: 6px; }
-        .message { color: #2a6; font-weight: bold; }
-        .error { color: #c33; font-weight: bold; }
-        .sources { font-size: 0.9em; color: #555; margin-top: 10px; }
-        textarea, input[type="file"] { width: 100%; margin-bottom: 10px; }
-        button { padding: 8px 16px; }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
-    <h1>Institutional PDF RAG Assistant</h1>
+    <div class="app">
+        <header class="app-header">
+            <h1>Institutional PDF RAG Assistant</h1>
+            <p class="subtitle">Ask questions about your uploaded documents</p>
+        </header>
 
-    <div class="section">
-        <h3>1. Upload Documents</h3>
-        <form action="/upload" method="post" enctype="multipart/form-data">
-            <input type="file" name="pdf_files" multiple accept=".pdf">
-            <button type="submit">Upload & Process</button>
-        </form>
-        {% if upload_message %}<p class="message">{{ upload_message }}</p>{% endif %}
-        <p>Currently processed: {{ processed_file_count }} document(s).</p>
+        <section class="card">
+            <h2>Upload documents</h2>
+            <form action="/upload" method="post" enctype="multipart/form-data" class="upload-form">
+                <label class="file-drop" for="pdf_files">
+                    <input type="file" id="pdf_files" name="pdf_files" multiple accept=".pdf">
+                    <span class="file-drop-text" id="file-drop-text">Click to choose PDF files</span>
+                </label>
+                <button type="submit" class="btn btn-primary">Upload &amp; Process</button>
+            </form>
+            {% if upload_message %}<p class="status-message success">{{ upload_message }}</p>{% endif %}
+            <p class="meta-text">Currently processed: 
+                <span class="doc-count-hover">
+        <strong>{{ processed_file_count }}</strong> document(s)
+        {% if processed_files %}
+        <div class="doc-tooltip">
+            <ul>
+                {% for f in processed_files %}
+                <li>{{ f }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </span>
+            </p>
+        </section>
+
+        <section class="card">
+            <h2>Ask a question</h2>
+            <form action="/ask" method="post" class="ask-form" id="ask-form">
+                <textarea name="question" rows="3" placeholder="Ask a question about your uploaded documents...">{{ question or '' }}</textarea>
+                <button type="submit" class="btn btn-primary" id="ask-btn">Ask</button>
+            </form>
+            {% if ask_error %}<p class="status-message error">{{ ask_error }}</p>{% endif %}
+        </section>
+
+        {% if answer %}
+        <section class="card answer-card">
+            <div class="qa-block">
+                <div class="question-bubble">
+                    <span class="label">You asked</span>
+                    <p>{{ question }}</p>
+                </div>
+                <div class="answer-bubble">
+                    <span class="label">Answer</span>
+                    <div id="answer-content" class="markdown-body"></div>
+                    <script id="answer-raw" type="application/json">{{ answer | tojson }}</script>
+                </div>
+            </div>
+
+            {% if not low_confidence and sources %}
+            <div class="sources">
+                <span class="label">Sources</span>
+                <ul>
+                    {% for s in sources %}
+                    <li><span class="source-name">{{ s.source }}</span> · Page {{ s.page }} <span class="score">({{ s.score }})</span></li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <form action="/feedback" method="post" class="feedback-form">
+                <input type="hidden" name="interaction_id" value="{{ interaction_id }}">
+                <button type="submit" name="vote" value="helpful" class="btn btn-ghost">👍 Helpful</button>
+                <button type="submit" name="vote" value="not_helpful" class="btn btn-ghost">👎 Not helpful</button>
+            </form>
+        </section>
+        {% endif %}
+
+        {% if feedback_message %}<p class="status-message success floating">{{ feedback_message }}</p>{% endif %}
     </div>
 
-    <div class="section">
-        <h3>2. Ask a Question</h3>
-        <form action="/ask" method="post">
-            <textarea name="question" rows="2" placeholder="Ask a question about your uploaded documents..."></textarea>
-            <button type="submit">Ask</button>
-        </form>
-        {% if ask_error %}<p class="error">{{ ask_error }}</p>{% endif %}
-    </div>
-
-    {% if answer %}
-<div class="section">
-    <h3>Answer</h3>
-    <p><strong>Q:</strong> {{ question }}</p>
-    <p>{{ answer }}</p>
-
-    {% if not low_confidence and sources %}
-    <div class="sources">
-        <strong>Sources:</strong>
-        <ul>
-            {% for s in sources %}
-            <li>{{ s.source }} — Page {{ s.page }} (similarity: {{ s.score }})</li>
-            {% endfor %}
-        </ul>
-    </div>
-    {% endif %}
-
-    <form action="/feedback" method="post" style="margin-top: 10px;">
-        <input type="hidden" name="interaction_id" value="{{ interaction_id }}">
-        <button type="submit" name="vote" value="helpful">👍 Helpful</button>
-        <button type="submit" name="vote" value="not_helpful">👎 Not helpful</button>
-    </form>
-</div>
-{% endif %}
-
-{% if feedback_message %}
-<p class="message">{{ feedback_message }}
-
-</p>{% endif %}
-
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>

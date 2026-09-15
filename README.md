@@ -108,17 +108,7 @@ Open `http://127.0.0.1:5000/` in a browser.
 
 ## Evaluation
 
-*Pending — to be completed as the next phase of this project.*
-
-The plan is to construct a test set of ~20–30 questions based on the uploaded documents (a mix of answerable and deliberately unanswerable questions), and report:
-
-- Retrieval accuracy (did the correct document/page get retrieved?)
-- Answer correctness against expected answers
-- Groundedness (did the answer stay within retrieved context?)
-- Unanswerable-question detection rate
-- Approximate response time
-
-Results will be added here once testing is complete. No results are claimed prior to actual testing.
+The system was evaluated against a 21-question test set spanning answerable-core, answerable-detail, unanswerable, and acronym-stress categories. Retrieval hit rate on answerable questions was 15/17 (88%). Confidence flagging was correct on 19/21 (90%) questions overall — the two exceptions were both single-acronym queries (RPC, ACID properties), consistent with the documented retrieval-sensitivity limitation of all-MiniLM-L6-v2 on short queries. All 4 unanswerable/out-of-domain questions were correctly identified as low-confidence, with no hallucinated answers observed. Average response time was 23.3s, though this includes occasional Gemini API retries during transient 503 errors.
 
 ## Limitations
 

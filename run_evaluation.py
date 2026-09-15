@@ -10,6 +10,8 @@ Records, per question:
   (retrieval hit)
 - whether low_confidence matches expectation (answerable -> False,
   unanswerable -> True)
+- whether answer generation actually succeeded (i.e. the LLM did not
+  return an [LLM ERROR] string, e.g. due to 429/503 failures)
 - response time
 - the actual answer text, for manual correctness review (correctness of
   wording/content is not auto-graded -- that still needs a human read,
@@ -54,6 +56,8 @@ def run():
         result = answer_question(question, vector_store, embed_query, generate_answer, top_k=3)
         elapsed = time.time() - t0
 
+        answer_generation_ok = not result["answer"].strip().startswith("[LLM ERROR]")
+
         retrieved_sources = [s["source"] for s in result["sources"]]
         retrieval_hit = (expected_source in retrieved_sources) if expected_source else None
 
@@ -70,14 +74,16 @@ def run():
             "low_confidence": result["low_confidence"],
             "expected_low_confidence": expected_low_confidence,
             "confidence_correct": confidence_correct,
+            "answer_generation_ok": answer_generation_ok,
             "response_time_sec": round(elapsed, 2),
             "answer_text": result["answer"].replace("\n", " ")[:200],
         }
         rows.append(row)
 
-        status = "OK" if (retrieval_hit is not False and confidence_correct) else "CHECK"
+        status = "OK" if (retrieval_hit is not False and confidence_correct and answer_generation_ok) else "CHECK"
         print(f"[{status}] #{i} ({category}) {question!r} -- "
-              f"hit={retrieval_hit} conf_ok={confidence_correct} time={elapsed:.2f}s")
+              f"hit={retrieval_hit} conf_ok={confidence_correct} "
+              f"gen_ok={answer_generation_ok} time={elapsed:.2f}s")
 
     # --- Write CSV ---
     os.makedirs(os.path.dirname(OUTPUT_CSV), exist_ok=True)
@@ -92,6 +98,7 @@ def run():
 
     retrieval_hits = [r for r in answerable_rows if r["retrieval_hit"]]
     confidence_correct_all = [r for r in rows if r["confidence_correct"]]
+    generation_ok_rows = [r for r in rows if r["answer_generation_ok"]]
     avg_time = sum(r["response_time_sec"] for r in rows) / len(rows)
 
     print("\n=== Summary ===")
@@ -102,6 +109,8 @@ def run():
     print(f"Unanswerable questions: {len(unanswerable_rows)}")
     print(f"Confidence flag correct (all questions): {len(confidence_correct_all)}/{len(rows)} "
           f"({100 * len(confidence_correct_all) / len(rows):.0f}%)")
+    print(f"Answer generation succeeded: {len(generation_ok_rows)}/{len(rows)} "
+          f"({100 * len(generation_ok_rows) / len(rows):.0f}%)")
     print(f"Average response time: {avg_time:.2f}s")
     print(f"\nFull results written to: {OUTPUT_CSV}")
     print("Note: answer wording/content correctness is NOT auto-graded -- "
