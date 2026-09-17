@@ -1,50 +1,74 @@
 import re
 
-SIMILARITY_THRESHOLD = 0.35  # semantic-only confidence threshold
+SIMILARITY_THRESHOLD = 0.35
 LEXICAL_FALLBACK_MIN_SIMILARITY = 0.05
 
+# Common question words are ignored for lexical matching, but important
+# entity/content words such as a person's name, place, skill, subject, etc.
+# are retained so paraphrased questions can still find the right chunk.
+STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "been", "being", "by", "can",
+    "could", "did", "do", "does", "for", "from", "has", "have", "how", "i",
+    "in", "is", "it", "its", "may", "me", "of", "on", "or", "please", "tell",
+    "that", "the", "their", "this", "to", "was", "were", "what", "when", "where",
+    "which", "who", "whom", "why", "will", "with", "would", "you", "your", "my",
+    "give", "show", "list", "provide", "explain", "describe", "know", "about"
+}
 
-def _content_words(text):
-    """Return meaningful words for a lightweight lexical relevance check."""
-    stopwords = {
-        "a", "an", "and", "are", "as", "at", "be", "by", "can", "do", "does",
-        "for", "from", "how", "i", "in", "is", "it", "me", "of", "on", "or",
-        "the", "this", "to", "was", "what", "where", "which", "who", "with",
-        "you", "your", "live", "lives", "located", "location", "address"
-    }
-    return set(re.findall(r"[a-z0-9]+", text.lower())) - stopwords
+# Words that commonly express the same factual intent. They are normalized
+# into a shared concept so different question wording gets similar lexical
+# treatment without changing the actual user question sent to Gemini.
+INTENT_GROUPS = [
+    {"live", "lives", "living", "reside", "resides", "residing", "located", "location", "address", "based"},
+    {"phone", "number", "mobile", "contact", "telephone"},
+    {"email", "mail", "gmail", "e-mail"},
+    {"job", "work", "works", "occupation", "role", "position", "career"},
+    {"study", "studies", "studying", "education", "degree", "college", "university"},
+]
+
+
+def _normalize_words(text):
+    words = set(re.findall(r"[a-z0-9]+", text.lower()))
+    return words - STOPWORDS
+
+
+def _intent_concepts(words):
+    """Map synonymous intent words to shared concepts."""
+    concepts = set(words)
+    for group in INTENT_GROUPS:
+        if words & group:
+            concepts.add("__intent_" + next(iter(group)))
+    return concepts
 
 
 def _lexical_relevance(question, chunk_text):
-    """Measure overlap between meaningful query words and a chunk."""
-    query_words = _content_words(question)
+    """Return a normalized lexical relevance score for a question/chunk pair."""
+    query_words = _normalize_words(question)
+    chunk_words = _normalize_words(chunk_text)
     if not query_words:
         return 0.0
-    chunk_words = _content_words(chunk_text)
-    return len(query_words & chunk_words) / len(query_words)
+
+    query_concepts = _intent_concepts(query_words)
+    chunk_concepts = _intent_concepts(chunk_words)
+
+    # Entity/content-word overlap is more useful than raw question-word
+    # overlap. Intent concepts let 'where is' and 'address' reinforce each other.
+    overlap = query_concepts & chunk_concepts
+    return len(overlap) / max(1, len(query_concepts))
 
 
 def _rank_results(question, results):
-    """Use semantic retrieval first, with a lexical fallback for exact factual queries.
-
-    This helps queries such as 'Where does Anmol live?' when the embedding model
-    gives a low semantic score even though the relevant chunk contains 'Anmol'.
-    """
+    """Rank semantic candidates using semantic + lexical relevance."""
     ranked = []
     for chunk, semantic_score in results:
         lexical_score = _lexical_relevance(question, chunk["text"])
-        ranked.append((chunk, semantic_score, lexical_score))
+        # Semantic similarity remains important, but a strong lexical/entity
+        # match can rescue factual queries where MiniLM scores the paraphrase low.
+        combined_score = (0.65 * lexical_score) + (0.35 * max(semantic_score, 0.0))
+        ranked.append((chunk, semantic_score, lexical_score, combined_score))
 
-    # Keep semantic ordering unless lexical evidence is strong enough to help.
-    ranked.sort(
-        key=lambda item: (
-            1 if item[2] > 0 else 0,
-            item[2],
-            item[1]
-        ),
-        reverse=True
-    )
-    return [(chunk, score) for chunk, score, _ in ranked]
+    ranked.sort(key=lambda item: item[3], reverse=True)
+    return [(chunk, semantic_score, lexical_score) for chunk, semantic_score, lexical_score, _ in ranked]
 
 
 def build_prompt(question, retrieved_chunks):
@@ -71,45 +95,41 @@ Answer:"""
 
 def answer_question(question, vector_store, embed_query_fn, generate_answer_fn, top_k=3):
     """
-    Full RAG pipeline: embed question -> retrieve -> rank -> check confidence -> generate answer.
+    Full RAG pipeline: embed question -> retrieve candidates -> rank with
+    semantic + lexical relevance -> confidence check -> generate answer.
     Returns dict: {answer, sources, retrieved, low_confidence}
     """
     query_embedding = embed_query_fn(question)
-
-    # Retrieve a wider candidate set so lexical evidence can rescue a weak
-    # semantic match instead of being limited to the original top 3.
     results = vector_store.search(query_embedding, top_k=max(top_k, 10))
-    results = _rank_results(question, results)
 
     if not results:
         return {
             "answer": "I could not find sufficient information about this in the uploaded documents.",
             "sources": [],
-            "retrieved": results,
+            "retrieved": [],
             "low_confidence": True
         }
 
-    top_chunk, top_score = results[0]
-    lexical_score = _lexical_relevance(question, top_chunk["text"])
+    ranked = _rank_results(question, results)
+    top_chunk, top_semantic, top_lexical = ranked[0]
 
-    # Normal semantic confidence remains the primary path. For exact factual
-    # queries, allow a strong lexical match when semantic similarity is weak.
-    semantically_confident = top_score >= SIMILARITY_THRESHOLD
+    semantically_confident = top_semantic >= SIMILARITY_THRESHOLD
     lexical_fallback = (
-        lexical_score > 0
-        and top_score >= LEXICAL_FALLBACK_MIN_SIMILARITY
+        top_lexical >= 0.25
+        and top_semantic >= LEXICAL_FALLBACK_MIN_SIMILARITY
     )
 
     if not semantically_confident and not lexical_fallback:
         return {
             "answer": "I could not find sufficient information about this in the uploaded documents.",
             "sources": [],
-            "retrieved": results,
+            "retrieved": [(chunk, score) for chunk, score, _ in ranked],
             "low_confidence": True
         }
 
-    # Only send the requested number of chunks to the LLM after ranking.
-    selected_results = results[:top_k]
+    # Only pass the strongest candidates to Gemini.
+    selected = ranked[:top_k]
+    selected_results = [(chunk, score) for chunk, score, _ in selected]
     prompt = build_prompt(question, selected_results)
     answer_text = generate_answer_fn(prompt)
 
