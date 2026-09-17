@@ -1,29 +1,3 @@
-"""
-run_evaluation.py
-
-Runs the question set in eval_questions.py against the REAL existing
-index/pipeline (load_existing_index, embed_query, generate_answer,
-answer_question) -- no mocking, no new pipeline logic.
-
-Records, per question:
-- whether the expected source document appears anywhere in top_k results
-  (retrieval hit)
-- whether low_confidence matches expectation (answerable -> False,
-  unanswerable -> True)
-- whether answer generation actually succeeded (i.e. the LLM did not
-  return an [LLM ERROR] string, e.g. due to 429/503 failures)
-- response time
-- the actual answer text, for manual correctness review (correctness of
-  wording/content is not auto-graded -- that still needs a human read,
-  per the README's "no results claimed prior to actual testing" policy)
-
-Usage (from project root):
-    python run_evaluation.py
-
-Writes results to: data/processed/evaluation_results.csv
-Prints a summary table to the console.
-"""
-
 import time
 import csv
 import os
@@ -38,6 +12,9 @@ from eval_questions import QUESTIONS
 INDEX_PATH = "vector_store/faiss.index"
 METADATA_PATH = "vector_store/metadata.pkl"
 OUTPUT_CSV = os.path.join("data", "processed", "evaluation_results.csv")
+
+# gemini-3.6-flash free tier is 6 RPM -- 11s keeps us under that with margin
+DELAY_BETWEEN_CALLS_SEC = 11
 
 
 def run():
@@ -84,6 +61,9 @@ def run():
         print(f"[{status}] #{i} ({category}) {question!r} -- "
               f"hit={retrieval_hit} conf_ok={confidence_correct} "
               f"gen_ok={answer_generation_ok} time={elapsed:.2f}s")
+
+        if i < len(QUESTIONS):
+            time.sleep(DELAY_BETWEEN_CALLS_SEC)
 
     # --- Write CSV ---
     os.makedirs(os.path.dirname(OUTPUT_CSV), exist_ok=True)

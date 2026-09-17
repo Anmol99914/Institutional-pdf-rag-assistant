@@ -8,9 +8,30 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
+    <div class="docs-panel-overlay" id="docs-panel-overlay"></div>
+    <aside class="docs-panel" id="docs-panel">
+        <div class="docs-panel-header">
+            <h2>Processed documents</h2>
+            <button type="button" class="panel-close-btn" id="docs-panel-close" aria-label="Close">&times;</button>
+        </div>
+        <ul class="docs-panel-list" id="docs-panel-list">
+            {% for f in processed_files %}
+            <li data-filename="{{ f }}">
+                <span>{{ f }}</span>
+                   <button type="button" class="delete-btn" data-filename="{{ f }}" title="Remove {{ f }}">&#128465;</button>
+            </li>
+            {% else %}
+            <li class="empty">No documents uploaded yet.</li>
+            {% endfor %}
+        </ul>
+    </aside>
+
     <div class="app">
         <header class="app-header">
-            <h1>Institutional PDF RAG Assistant</h1>
+            <div class="header-top">
+                <h1>Institutional PDF RAG Assistant</h1>
+                <button type="button" class="gear-btn" id="docs-gear-btn" aria-label="Manage documents">&#9881;</button>
+            </div>
             <p class="subtitle">Ask questions about your uploaded documents</p>
         </header>
 
@@ -24,19 +45,9 @@
                 <button type="submit" class="btn btn-primary">Upload &amp; Process</button>
             </form>
             {% if upload_message %}<p class="status-message success">{{ upload_message }}</p>{% endif %}
-            <p class="meta-text">Currently processed: 
-                <span class="doc-count-hover">
-        <strong>{{ processed_file_count }}</strong> document(s)
-        {% if processed_files %}
-        <div class="doc-tooltip">
-            <ul>
-                {% for f in processed_files %}
-                <li>{{ f }}</li>
-                {% endfor %}
-            </ul>
-        </div>
-        {% endif %}
-    </span>
+            <p class="meta-text">
+                Currently processed: <strong id="processed-count-num">{{ processed_file_count }}</strong> document(s) —
+                manage via the <span aria-hidden="true">&#9881;</span> menu above.
             </p>
         </section>
 

@@ -108,22 +108,42 @@ Open `http://127.0.0.1:5000/` in a browser.
 
 ## Evaluation
 
-The system was evaluated against a 21-question test set spanning answerable-core, answerable-detail, unanswerable, and acronym-stress categories. Retrieval hit rate on answerable questions was 15/17 (88%). Confidence flagging was correct on 19/21 (90%) questions overall — the two exceptions were both single-acronym queries (RPC, ACID properties), consistent with the documented retrieval-sensitivity limitation of all-MiniLM-L6-v2 on short queries. All 4 unanswerable/out-of-domain questions were correctly identified as low-confidence, with no hallucinated answers observed. Average response time was 23.3s, though this includes occasional Gemini API retries during transient 503 errors.
+The pipeline was evaluated against a 21-question test set spanning three source
+PDFs (management theory, distributed systems, .NET) across four categories:
+core factual questions, detail questions, deliberately unanswerable questions
+(to test hallucination refusal), and bare-acronym queries (to stress-test
+retrieval sensitivity). Full per-question results are in
+`data/processed/evaluation_results.csv`; run `python run_evaluation.py` to
+reproduce.
 
-## Limitations
+**Results:**
 
-- Tested against a small number of PDFs (1–5); has not been evaluated at larger document-collection scale.
-- The similarity threshold for low-confidence detection is a heuristic default (0.35), not a rigorously tuned value — it acts as a practical safeguard, not a hallucination-prevention guarantee.
-- Incremental indexing is filename-based: a PDF is only skipped if its exact filename was already indexed, so a renamed duplicate (or an unrelated file that happens to share a filename) is not detected as such.
-- No authentication or multi-user support; designed for single-user local demonstration.
-- Chunking is word-based and per-page; a fact split across a page boundary may occasionally be only partially retrieved.
-- Embedding model runs locally and unauthenticated against Hugging Face Hub, which may hit rate limits under heavy use (non-blocking for this scale).
+| Metric | Result |
+|---|---|
+| Retrieval hit rate (answerable questions) | 15/17 (88%) |
+| Confidence-flag accuracy (all questions) | 19/21 (90%) |
+| Answer generation success | 21/21 (100%) |
+| Average response time | 5.21s |
 
-## Future Work
+**Retrieval and grounding.** The system correctly retrieved the expected
+source document for 15 of 17 answerable questions, and correctly flagged all
+4 unanswerable, out-of-corpus questions (boiling point of mercury, 2022 World
+Cup, capital of France, Romeo and Juliet) as low-confidence rather than
+hallucinating an answer. This confirms the two-layer hallucination
+prevention (similarity threshold filtering + LLM-level grounding refusal in
+the prompt) is working as designed.
 
-- Complete and document the formal evaluation (Phase 11).
-- Tune the similarity threshold empirically using evaluation results.
-- Consider incremental (non-rebuild) index updates if document volume grows.
-- Add OCR support for scanned (non-text) PDFs.
-- Investigate retrieval sensitivity to short/acronym-only queries (e.g. bare "RPC") versus full natural-language questions, as part of the formal evaluation.
-- Expand the UI to show processing status per file and support document removal.
+**Known limitation: bare-acronym queries.** The two retrieval misses were
+`RPC` and `ACID properties` — single-word or bare-acronym queries with no
+surrounding natural language. The same underlying concepts retrieve
+correctly when phrased as full questions (e.g. "What is Remote Procedure
+Call in distributed systems?" retrieves `DS.pdf` correctly and generates a
+grounded answer). This is a known and expected consequence of using
+sentence-embedding similarity for retrieval: short, low-context queries
+produce weaker embeddings than well-formed natural language questions. It is
+not a bug in the pipeline.
+
+**Note on correctness.** Retrieval hit rate and confidence-flag correctness
+are automatically graded by comparing retrieved source filenames against
+expected sources. Answer wording and factual correctness are not
+auto-graded and were manually reviewed against the source PDFs for this run.

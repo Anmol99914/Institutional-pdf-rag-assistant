@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
@@ -158,6 +158,32 @@ def ask():
         low_confidence=result["low_confidence"],
         interaction_id=interaction_id
     )
+@app.route("/delete/<path:filename>", methods=["POST"])
+def delete_document(filename):
+    global vector_store, processed_files, processed_file_count
+
+    filename = secure_filename(filename)
+
+    if vector_store is not None:
+        removed = vector_store.remove_by_source(filename)
+        if removed:
+            vector_store.save(INDEX_PATH, METADATA_PATH)
+
+    pdf_path = os.path.join(UPLOAD_DIR, filename)
+    if os.path.exists(pdf_path):
+        os.remove(pdf_path)
+
+    processed_files = (
+        sorted(set(c["source"] for c in vector_store.metadata))
+        if vector_store else []
+    )
+    processed_file_count = len(processed_files)
+
+    return jsonify({
+        "success": True,
+        "filename": filename,
+        "processed_file_count": processed_file_count
+    })
 
 
 @app.route("/feedback", methods=["POST"])
@@ -174,6 +200,8 @@ def feedback():
         processed_files=processed_files,
         feedback_message="Thanks for your feedback!"
     )
+
+
 
 
 if __name__ == "__main__":

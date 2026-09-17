@@ -31,4 +31,65 @@ document.addEventListener("DOMContentLoaded", () => {
             askBtn.disabled = true;
         });
     }
+
+    // Documents management panel (gear icon)
+    const gearBtn = document.getElementById("docs-gear-btn");
+    const docsPanel = document.getElementById("docs-panel");
+    const docsOverlay = document.getElementById("docs-panel-overlay");
+    const panelClose = document.getElementById("docs-panel-close");
+
+    const openPanel = () => {
+        docsPanel.classList.add("open");
+        docsOverlay.classList.add("open");
+    };
+    const closePanel = () => {
+        docsPanel.classList.remove("open");
+        docsOverlay.classList.remove("open");
+    };
+
+    if (gearBtn) gearBtn.addEventListener("click", openPanel);
+    if (panelClose) panelClose.addEventListener("click", closePanel);
+    if (docsOverlay) docsOverlay.addEventListener("click", closePanel);
+
+        // Documents management: delete via fetch, update DOM instantly, no page reload
+    const docsList = document.getElementById("docs-panel-list");
+    const countEl = document.getElementById("processed-count-num");
+
+    if (docsList) {
+        docsList.addEventListener("click", async (e) => {
+            const btn = e.target.closest(".delete-btn");
+            if (!btn) return;
+
+            const filename = btn.dataset.filename;
+            if (!confirm(`Remove "${filename}" from the index?`)) return;
+
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(`/delete/${encodeURIComponent(filename)}`, {
+                    method: "POST"
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    const li = docsList.querySelector(`li[data-filename="${CSS.escape(filename)}"]`);
+                    if (li) li.remove();
+
+                    if (countEl) countEl.textContent = data.processed_file_count;
+
+                    if (data.processed_file_count === 0) {
+                        docsList.innerHTML = '<li class="empty">No documents uploaded yet.</li>';
+                    }
+			const staleMsg = document.querySelector(".status-message.success");
+    			if (staleMsg) staleMsg.remove();
+                } else {
+                    alert("Could not remove the document.");
+                    btn.disabled = false;
+                }
+            } catch (err) {
+                alert("Could not remove the document.");
+                btn.disabled = false;
+            }
+        });
+    }
 });

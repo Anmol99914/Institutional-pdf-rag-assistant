@@ -1,4 +1,5 @@
 import os
+import re
 import time
 from google import genai
 from dotenv import load_dotenv
@@ -24,7 +25,7 @@ def _get_client():
     return _client
 
 
-def generate_answer(prompt, model_name="gemini-2.5-flash"):
+def generate_answer(prompt, model_name="gemini-3.6-flash"):
     """Sends a prompt to Gemini and retries temporary server errors and
     rate-limit errors with different backoff strategies."""
 
@@ -58,12 +59,14 @@ def generate_answer(prompt, model_name="gemini-2.5-flash"):
                     time.sleep(wait_time)
                     continue
 
-            # Retry rate-limit / quota errors (much longer backoff --
-            # these need real time to reset, not exponential-from-1-second)
+            # Retry rate-limit / quota errors -- use the server's own
+            # retry_delay when it gives one, since free-tier RPM windows
+            # don't reset on our schedule
             elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
 
                 if attempt < max_retries - 1:
-                    wait_time = 20 * (attempt + 1)  # 20s, 40s
+                    match = re.search(r"retryDelay['\"]?\s*[:=]\s*['\"]?(\d+)", err_str)
+                    wait_time = int(match.group(1)) + 1 if match else 20 * (attempt + 1)
 
                     print(
                         f"[LLM] Rate limit hit. Waiting {wait_time} "

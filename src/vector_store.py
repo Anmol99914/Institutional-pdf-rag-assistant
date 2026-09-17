@@ -15,6 +15,22 @@ class VectorStore:
         self.index.add(normalized.astype("float32"))
         self.metadata.extend(chunks)
 
+    def remove_by_source(self, source):
+        """Removes all vectors/chunks belonging to a given source filename in-place.
+        No re-embedding needed -- just drops the matching rows from the FAISS index
+        and the parallel metadata list. Returns the number of chunks removed."""
+        ids_to_remove = [i for i, m in enumerate(self.metadata) if m["source"] == source]
+        if not ids_to_remove:
+            return 0
+
+        selector = faiss.IDSelectorBatch(np.array(ids_to_remove, dtype="int64"))
+        self.index.remove_ids(selector)
+
+        remove_set = set(ids_to_remove)
+        self.metadata = [m for i, m in enumerate(self.metadata) if i not in remove_set]
+
+        return len(ids_to_remove)
+
     def search(self, query_embedding, top_k=5):
         """Returns list of (chunk_metadata, similarity_score), sorted by relevance."""
         query_norm = query_embedding / np.linalg.norm(query_embedding)
