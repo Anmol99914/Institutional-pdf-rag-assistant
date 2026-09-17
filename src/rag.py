@@ -1,7 +1,7 @@
 import re
 
 SIMILARITY_THRESHOLD = 0.35
-LEXICAL_FALLBACK_MIN_SIMILARITY = 0.05
+LEXICAL_FALLBACK_MIN_LEXICAL = 0.50
 
 # Common question words are ignored for lexical matching, but important
 # entity/content words such as a person's name, place, skill, subject, etc.
@@ -16,15 +16,15 @@ STOPWORDS = {
 }
 
 # Words that commonly express the same factual intent. They are normalized
-# into a shared concept so different question wording gets similar lexical
-# treatment without changing the actual user question sent to Gemini.
-INTENT_GROUPS = [
-    {"live", "lives", "living", "reside", "resides", "residing", "located", "location", "address", "based"},
-    {"phone", "number", "mobile", "contact", "telephone"},
-    {"email", "mail", "gmail", "e-mail"},
-    {"job", "work", "works", "occupation", "role", "position", "career"},
-    {"study", "studies", "studying", "education", "degree", "college", "university"},
-]
+# into stable shared concepts so different question wording gets similar
+# lexical treatment without changing the actual user question sent to Gemini.
+INTENT_GROUPS = {
+    "location": {"live", "lives", "living", "reside", "resides", "residing", "located", "location", "address", "based"},
+    "phone": {"phone", "number", "mobile", "contact", "telephone"},
+    "email": {"email", "mail", "gmail", "e-mail"},
+    "work": {"job", "work", "works", "occupation", "role", "position", "career"},
+    "education": {"study", "studies", "studying", "education", "degree", "college", "university"},
+}
 
 
 def _normalize_words(text):
@@ -33,11 +33,11 @@ def _normalize_words(text):
 
 
 def _intent_concepts(words):
-    """Map synonymous intent words to shared concepts."""
+    """Map synonymous intent words to stable shared concepts."""
     concepts = set(words)
-    for group in INTENT_GROUPS:
+    for label, group in INTENT_GROUPS.items():
         if words & group:
-            concepts.add("__intent_" + next(iter(group)))
+            concepts.add("__intent_" + label)
     return concepts
 
 
@@ -114,10 +114,9 @@ def answer_question(question, vector_store, embed_query_fn, generate_answer_fn, 
     top_chunk, top_semantic, top_lexical = ranked[0]
 
     semantically_confident = top_semantic >= SIMILARITY_THRESHOLD
-    lexical_fallback = (
-        top_lexical >= 0.25
-        and top_semantic >= LEXICAL_FALLBACK_MIN_SIMILARITY
-    )
+    # A strong lexical/entity + intent match is sufficient to rescue a
+    # paraphrased factual query even when the embedding similarity is very low.
+    lexical_fallback = top_lexical >= LEXICAL_FALLBACK_MIN_LEXICAL
 
     if not semantically_confident and not lexical_fallback:
         return {
