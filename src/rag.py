@@ -58,6 +58,7 @@ def _intent_concepts(words):
 
 def _lexical_relevance(question, chunk_text):
     """Return a normalized lexical relevance score for a question/chunk pair."""
+
     query_words = _normalize_words(question)
     chunk_words = _normalize_words(chunk_text)
 
@@ -67,12 +68,124 @@ def _lexical_relevance(question, chunk_text):
     query_concepts = _intent_concepts(query_words)
     chunk_concepts = _intent_concepts(chunk_words)
 
-    # Entity/content-word overlap is more useful than raw question-word
-    # overlap. Intent concepts let 'where is' and 'address' reinforce each other.
+    # Normal lexical + intent overlap
     overlap = query_concepts & chunk_concepts
+    score = len(overlap) / max(1, len(query_concepts))
 
-    return len(overlap) / max(1, len(query_concepts))
+    chunk_lower = chunk_text.lower()
 
+    # ---------------------------------------------------------
+    # Structured contact information
+    # ---------------------------------------------------------
+
+    asks_phone = "__intent_phone" in query_concepts
+    asks_email = "__intent_email" in query_concepts
+
+    # Detect email addresses such as:
+    # giria4621@gmail.com
+    has_email = bool(
+        re.search(
+            r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+            chunk_text
+        )
+    )
+
+    # Detect a normal 10-digit Nepali phone number such as:
+    # 9818118344
+    #
+    # Also accepts common formatted numbers.
+    has_phone = bool(
+        re.search(
+            r"\b\d{10}\b|\b\+?\d[\d\s().-]{7,}\d\b",
+            chunk_text
+        )
+    )
+
+    if asks_phone and has_phone:
+        score = max(score, 1.0)
+
+    if asks_email and has_email:
+        score = max(score, 1.0)
+
+    # ---------------------------------------------------------
+    # Person/entity matching
+    # ---------------------------------------------------------
+
+    # If the question contains a specific name and the chunk
+    # contains that name, strongly prefer that chunk.
+    question_names = re.findall(
+        r"\b[A-Za-z]{3,}\b",
+        question
+    )
+
+    for name in question_names:
+        name_lower = name.lower()
+
+        if name_lower in STOPWORDS:
+            continue
+
+        if name_lower in chunk_lower:
+            score = max(score, 1.0)
+
+    # ---------------------------------------------------------
+    # Section-specific matching
+    # ---------------------------------------------------------
+
+    section_keywords = {
+        "__intent_education": [
+            "education",
+            "see",
+            "plus 2",
+            "bachelors",
+            "bca",
+            "college"
+        ],
+
+        "__intent_skills": [
+            "technical skills",
+            "web development",
+            "programming",
+            "database",
+            "wordpress",
+            "django",
+            "mysql",
+            "oracle",
+            "javascript",
+            "php"
+        ],
+
+        "__intent_projects": [
+            "projects",
+            "beathub",
+            "student result analytics",
+            "developed",
+            "application"
+        ],
+
+        "__intent_gpa": [
+            "gpa",
+            "3.55",
+            "3.53"
+        ],
+
+        "__intent_location": [
+            "mandikhatar",
+            "kathmandu"
+        ]
+    }
+
+    for intent, keywords in section_keywords.items():
+
+        if intent not in query_concepts:
+            continue
+
+        for keyword in keywords:
+
+            if keyword in chunk_lower:
+                score = max(score, 1.0)
+                break
+
+    return min(score, 1.0)
 
 def _rank_results(question, results):
     """Attach a lexical relevance score to each semantic candidate, keeping
@@ -94,31 +207,134 @@ def _rank_results(question, results):
 
     return ranked
 
-
-def _filter_relevant_results(results, top_k):
-    """Keep only results that are reasonably close to the strongest match.
-
-    This prevents weak/unrelated chunks from being displayed or sent to the
-    LLM merely because top_k is fixed at 3. Multiple chunks are still kept
-    when their semantic scores are reasonably close to the best result.
-    """
-    if not results:
+def _filter_relevant_results(question, ranked_results, top_k):
+    """Keep sources that are relevant to the specific question intent."""
+    if not ranked_results:
         return []
 
-    best_score = results[0][1]
+    question_lower = question.lower()
+
+    # For personal factual questions, prefer chunks containing
+    # the relevant section/content rather than just the person's name.
+    intent_keywords = []
+
+    if any(word in question_lower for word in [
+        "skill", "skills", "technical", "technology", "technologies"
+    ]):
+        intent_keywords = [
+            "technical skills",
+            "web development",
+            "wordpress",
+            "database",
+            "programming",
+            "tools",
+            "php",
+            "html",
+            "css",
+            "javascript",
+            "mysql",
+            "oracle",
+            "django",
+            "java",
+            "python"
+        ]
+
+    elif any(word in question_lower for word in [
+        "project", "projects", "application", "applications", "built", "developed"
+    ]):
+        intent_keywords = [
+            "projects",
+            "developed",
+            "application",
+            "platform",
+            "student result analytics",
+            "beathub"
+        ]
+    elif any(word in question_lower for word in [
+    "phone", "number", "mobile", "contact", "email", "mail"
+]):
+        intent_keywords = [
+            "phone",
+            "number",
+            "mobile",
+            "contact",
+            "email",
+            "gmail"
+        ]
+
+    elif any(word in question_lower for word in [
+        "education", "degree", "college", "university", "study", "gpa"
+    ]):
+        intent_keywords = [
+            "education",
+            "see",
+            "plus 2",
+            "bachelors",
+            "gpa",
+            "college",
+            "6th semester"
+        ]
+
+    if intent_keywords:
+        intent_matches = []
+
+        for chunk, semantic_score, lexical_score in ranked_results:
+            text_lower = chunk["text"].lower()
+            match_count = sum(
+                1 for keyword in intent_keywords
+                if keyword in text_lower
+            )
+
+            intent_matches.append(
+                (
+                    chunk,
+                    semantic_score,
+                    lexical_score,
+                    match_count
+                )
+            )
+
+        best_match_count = max(
+            item[3]
+            for item in intent_matches
+        )
+
+        if best_match_count > 0:
+            relevant = [
+                item
+                for item in intent_matches
+                if item[3] >= best_match_count
+            ]
+
+            relevant.sort(
+                key=lambda item: item[1],
+                reverse=True
+            )
+
+            return [
+                (chunk, semantic_score)
+                for chunk, semantic_score, _, _
+                in relevant[:top_k]
+            ]
+
+    # Existing semantic filtering for everything else.
+    best_score = ranked_results[0][1]
     cutoff = best_score * SOURCE_RELEVANCE_RATIO
 
     relevant = [
-        result
-        for result in results
-        if result[1] >= cutoff
+        item
+        for item in ranked_results
+        if item[1] >= cutoff
     ]
 
-    # Always keep the strongest result.
     if not relevant:
-        relevant = [results[0]]
+        relevant = [ranked_results[0]]
 
-    return relevant[:top_k]
+    return [
+        (chunk, semantic_score)
+        for chunk, semantic_score, _
+        in relevant[:top_k]
+    ]
 
 
 def build_prompt(question, retrieved_chunks):
@@ -220,13 +436,10 @@ def answer_question(
 
     # Remove weak/unrelated results before sending context to the LLM
     # and before displaying them as sources.
-    selected_results = [
-        (chunk, score)
-        for chunk, score, _ in selected
-    ]
 
     selected_results = _filter_relevant_results(
-        selected_results,
+        question,
+        selected,
         top_k
     )
 
