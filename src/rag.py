@@ -58,17 +58,21 @@ def _lexical_relevance(question, chunk_text):
 
 
 def _rank_results(question, results):
-    """Rank semantic candidates using semantic + lexical relevance."""
+    """Attach a lexical relevance score to each semantic candidate, keeping
+    the original semantic ordering intact (vector_store.search already
+    returns results sorted by semantic similarity, descending).
+
+    Lexical/intent scoring is deliberately NOT blended into this ordering.
+    It exists purely as a fallback signal for answer_question to use when
+    semantic confidence fails -- letting it influence ranking universally
+    previously caused well-matched semantic results (e.g. correct technical
+    document chunks) to be out-ranked by unrelated chunks that happened to
+    share a common word with the question."""
     ranked = []
     for chunk, semantic_score in results:
         lexical_score = _lexical_relevance(question, chunk["text"])
-        # Semantic similarity remains important, but a strong lexical/entity
-        # match can rescue factual queries where MiniLM scores the paraphrase low.
-        combined_score = (0.65 * lexical_score) + (0.35 * max(semantic_score, 0.0))
-        ranked.append((chunk, semantic_score, lexical_score, combined_score))
-
-    ranked.sort(key=lambda item: item[3], reverse=True)
-    return [(chunk, semantic_score, lexical_score) for chunk, semantic_score, lexical_score, _ in ranked]
+        ranked.append((chunk, semantic_score, lexical_score))
+    return ranked
 
 
 def build_prompt(question, retrieved_chunks):
@@ -114,20 +118,29 @@ def answer_question(question, vector_store, embed_query_fn, generate_answer_fn, 
     top_chunk, top_semantic, top_lexical = ranked[0]
 
     semantically_confident = top_semantic >= SIMILARITY_THRESHOLD
-    # A strong lexical/entity + intent match is sufficient to rescue a
-    # paraphrased factual query even when the embedding similarity is very low.
-    lexical_fallback = top_lexical >= LEXICAL_FALLBACK_MIN_LEXICAL
 
-    if not semantically_confident and not lexical_fallback:
-        return {
-            "answer": "I could not find sufficient information about this in the uploaded documents.",
-            "sources": [],
-            "retrieved": [(chunk, score) for chunk, score, _ in ranked],
-            "low_confidence": True
-        }
+    if semantically_confident:
+        # Semantic ranking already found a confident match -- use it as-is.
+        # No lexical reordering, so well-matched technical/domain queries
+        # are never displaced by an unrelated chunk with incidental word overlap.
+        selected = ranked[:top_k]
+    else:
+        # Semantic top-1 wasn't confident. Check every candidate for a
+        # strong lexical/intent match that can rescue a paraphrased query
+        # (e.g. embedding similarity is low, but the chunk clearly mentions
+        # the same entity/intent as the question).
+        lexical_best = max(ranked, key=lambda item: item[2])
 
-    # Only pass the strongest candidates to Gemini.
-    selected = ranked[:top_k]
+        if lexical_best[2] >= LEXICAL_FALLBACK_MIN_LEXICAL:
+            rest = [r for r in ranked if r is not lexical_best]
+            selected = [lexical_best] + rest[:top_k - 1]
+        else:
+            return {
+                "answer": "I could not find sufficient information about this in the uploaded documents.",
+                "sources": [],
+                "retrieved": [(chunk, score) for chunk, score, _ in ranked],
+                "low_confidence": True
+            }
     selected_results = [(chunk, score) for chunk, score, _ in selected]
     prompt = build_prompt(question, selected_results)
     answer_text = generate_answer_fn(prompt)
