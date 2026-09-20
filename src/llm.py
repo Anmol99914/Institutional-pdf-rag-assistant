@@ -25,7 +25,7 @@ def _get_client():
     return _client
 
 
-def generate_answer(prompt, model_name="gemini-3.6-flash"):
+def generate_answer(prompt, model_name="gemini-3.5-flash-lite"):
     """Sends a prompt to Gemini and retries temporary server errors and
     rate-limit errors with different backoff strategies."""
 

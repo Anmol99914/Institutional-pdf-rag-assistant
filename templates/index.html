@@ -1,101 +1,391 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Institutional PDF RAG Assistant</title>
+    <title>Institutional Knowledge Assistant</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
-<body>
-    <div class="docs-panel-overlay" id="docs-panel-overlay"></div>
-    <aside class="docs-panel" id="docs-panel">
-        <div class="docs-panel-header">
-            <h2>Processed documents</h2>
-            <button type="button" class="panel-close-btn" id="docs-panel-close" aria-label="Close">&times;</button>
+
+<body data-initial-view="{{ 'upload' if upload_message else 'ask' }}">
+
+    <!-- Icon sprite (inline SVG, no external dependency) -->
+    <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true"
+        focusable="false">
+        <symbol id="i-menu" viewBox="0 0 24 24">
+            <line x1="4" x2="20" y1="6" y2="6" />
+            <line x1="4" x2="20" y1="12" y2="12" />
+            <line x1="4" x2="20" y1="18" y2="18" />
+        </symbol>
+        <symbol id="i-search" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+        </symbol>
+        <symbol id="i-upload" viewBox="0 0 24 24">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" x2="12" y1="3" y2="15" />
+        </symbol>
+        <symbol id="i-file" viewBox="0 0 24 24">
+            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" x2="8" y1="13" y2="13" />
+            <line x1="16" x2="8" y1="17" y2="17" />
+            <line x1="10" x2="8" y1="9" y2="9" />
+        </symbol>
+        <symbol id="i-help" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+            <line x1="12" x2="12.01" y1="17" y2="17" />
+        </symbol>
+        <symbol id="i-x" viewBox="0 0 24 24">
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+        </symbol>
+        <symbol id="i-external" viewBox="0 0 24 24">
+            <path d="M15 3h6v6" />
+            <path d="M10 14 21 3" />
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+        </symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24">
+            <path d="M5 12h14" />
+            <path d="m12 5 7 7-7 7" />
+        </symbol>
+        <symbol id="i-check" viewBox="0 0 24 24">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+        </symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24">
+            <path d="M3 6h18" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+        </symbol>
+    </svg>
+
+    <!-- ============ HEADER ============ -->
+    <header class="app-header">
+        <button type="button" class="icon-btn" id="sidebar-toggle" aria-label="Toggle navigation menu"
+            aria-controls="app-sidebar" aria-expanded="true">
+            <svg class="icon" aria-hidden="true">
+                <use href="#i-menu" />
+            </svg>
+        </button>
+        <div class="brand">
+            <span class="brand-title">Institutional PDF RAG Assistant</span>
+            <span class="brand-tag">AI-Powered Document Question Answering</span>
         </div>
-        <ul class="docs-panel-list" id="docs-panel-list">
-            {% for f in processed_files %}
-            <li data-filename="{{ f }}">
-                <span>{{ f }}</span>
-                   <button type="button" class="delete-btn" data-filename="{{ f }}" title="Remove {{ f }}">&#128465;</button>
-            </li>
-            {% else %}
-            <li class="empty">No documents uploaded yet.</li>
-            {% endfor %}
-        </ul>
+        <button type="button" class="icon-btn" data-view="help" aria-label="Help and about">
+            <svg class="icon" aria-hidden="true">
+                <use href="#i-help" />
+            </svg>
+        </button>
+    </header>
+
+    <!-- ============ SIDEBAR ============ -->
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <aside class="sidebar" id="app-sidebar" aria-label="Main navigation">
+        <nav>
+            <p class="nav-heading">Main</p>
+            <button type="button" class="nav-item" data-view="ask">
+                <svg class="icon" aria-hidden="true">
+                    <use href="#i-search" />
+                </svg>
+                <span>Ask a Question</span>
+            </button>
+
+            <p class="nav-heading">Administration</p>
+            <button type="button" class="nav-item" data-view="upload">
+                <svg class="icon" aria-hidden="true">
+                    <use href="#i-upload" />
+                </svg>
+                <span>Upload Document</span>
+            </button>
+            <button type="button" class="nav-item" data-view="documents">
+                <svg class="icon" aria-hidden="true">
+                    <use href="#i-file" />
+                </svg>
+                <span>Processed Documents</span>
+                <span class="badge processed-count">{{ processed_file_count }}</span>
+            </button>
+
+            <p class="nav-heading">Help</p>
+            <button type="button" class="nav-item" data-view="help">
+                <svg class="icon" aria-hidden="true">
+                    <use href="#i-help" />
+                </svg>
+                <span>Help / About</span>
+            </button>
+        </nav>
     </aside>
 
-    <div class="app">
-        <header class="app-header">
-            <div class="header-top">
-                <h1>Institutional PDF RAG Assistant</h1>
-                <button type="button" class="gear-btn" id="docs-gear-btn" aria-label="Manage documents">&#9881;</button>
-            </div>
-            <p class="subtitle">Ask questions about your uploaded documents</p>
-        </header>
+    <main class="main" id="main-content">
 
-        <section class="card">
-            <h2>Upload documents</h2>
-            <form action="/upload" method="post" enctype="multipart/form-data" class="upload-form">
-                <label class="file-drop" for="pdf_files">
-                    <input type="file" id="pdf_files" name="pdf_files" multiple accept=".pdf">
-                    <span class="file-drop-text" id="file-drop-text">Click to choose PDF files</span>
-                </label>
-                <button type="submit" class="btn btn-primary">Upload &amp; Process</button>
-            </form>
-            {% if upload_message %}<p class="status-message success">{{ upload_message }}</p>{% endif %}
-            <p class="meta-text">
-                Currently processed: <strong id="processed-count-num">{{ processed_file_count }}</strong> document(s) —
-                manage via the <span aria-hidden="true">&#9881;</span> menu above.
+        <!-- ============ VIEW: ASK A QUESTION ============ -->
+        <section id="view-ask" data-view-panel="ask" aria-label="Ask a question">
+            <div class="ask-layout" id="ask-layout">
+
+                <div class="ask-column">
+
+                    {% if not answer %}
+                    <div class="hero" id="empty-state">
+                        <h1>How can we help you find information?</h1>
+                        <p class="hero-sub">Ask a question about the institution's indexed documents.</p>
+                    </div>
+                    {% endif %}
+
+                    {% if processed_file_count == 0 %}
+                    <div class="notice notice-warning" role="status">
+                        No documents are indexed yet.
+                        <button type="button" class="link-btn" data-view="upload">Upload a document</button> to get
+                        started.
+                    </div>
+                    {% endif %}
+
+                    <form action="/ask" method="post" class="ask-form" id="ask-form">
+                        <div class="ask-box">
+                            <label for="question" class="sr-only">Your question</label>
+                            <textarea id="question" name="question" rows="3" required
+                                placeholder="Ask a question about the indexed documents...">{{ question or '' }}</textarea>
+                            <div class="ask-actions">
+                                <span class="ask-hint">Enter to ask &middot; Shift+Enter for a new line</span>
+                                <button type="submit" class="btn btn-primary" id="ask-btn">Ask</button>
+                            </div>
+                        </div>
+                    </form>
+
+                    {% if ask_error %}<p class="notice notice-danger" role="alert">{{ ask_error }}</p>{% endif %}
+                    {% if feedback_message %}<p class="notice notice-info" role="status">{{ feedback_message }}</p>{%
+                    endif %}
+
+                    {% if not answer %}
+                    <div class="examples" id="examples">
+                        <p class="examples-label">Example questions</p>
+                        <div class="chip-row">
+                            <button type="button" class="chip"
+                                data-question="What programs are offered by the institution?">What programs are offered
+                                by the institution?</button>
+                            <button type="button" class="chip" data-question="What are the admission requirements?">What
+                                are the admission requirements?</button>
+                            <button type="button" class="chip"
+                                data-question="When was the institution established?">When was the institution
+                                established?</button>
+                            <button type="button" class="chip" data-question="What facilities are available?">What
+                                facilities are available?</button>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Loading state (shown by script.js while the page waits for the answer) -->
+                    <div class="loading-panel" id="loading-panel" role="status" aria-live="polite" hidden>
+                        <span class="spinner" aria-hidden="true"></span>
+                        <span>Analyzing indexed documents&hellip;</span>
+                    </div>
+
+                    {% if answer %}
+                    <div class="qa-results" id="qa-results">
+
+                        <section class="question-echo" aria-label="Your question">
+                            <div class="question-echo-head">
+                                <span class="label">Your question</span>
+                                <button type="button" class="new-question-btn" id="new-question-btn">
+                                    New Question
+                                    <svg class="icon" aria-hidden="true">
+                                        <use href="#i-arrow" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <p>{{ question }}</p>
+                        </section>
+
+                        <section class="panel answer-panel" aria-labelledby="answer-heading">
+                            <h2 class="section-title" id="answer-heading">Answer</h2>
+                            <div id="answer-content" class="markdown-body"></div>
+                            <script id="answer-raw" type="application/json">{{ answer | tojson }}</script>
+                        </section>
+
+                        {% if not low_confidence and sources %}
+                        <section class="sources-panel" aria-labelledby="sources-heading">
+                            <h2 class="section-title" id="sources-heading">Document Sources</h2>
+                            <p class="sources-help">Each source links back to the original page in the indexed PDF.</p>
+                            <ul class="source-list">
+                                {% for s in sources %}
+                                <li class="source-card">
+                                    <div class="source-head">
+                                        <span class="source-icon" aria-hidden="true"><svg class="icon">
+                                                <use href="#i-file" />
+                                            </svg></span>
+                                        <div class="source-body">
+                                            <p class="source-name">{{ s.source }}</p>
+                                            <p class="source-page">Page {{ s.page }}</p>
+                                        </div>
+                                    </div>
+                                    {% if s.snippet %}<p class="source-snippet">{{ s.snippet }}</p>{% endif %}
+                                    <div class="source-actions">
+                                        <button type="button" class="btn btn-secondary view-page-btn"
+                                            data-filename="{{ s.source }}" data-page="{{ s.page }}">
+                                            View Page <svg class="icon" aria-hidden="true">
+                                                <use href="#i-arrow" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </section>
+                        {% endif %}
+
+                        <section class="feedback" aria-label="Answer feedback">
+                            <form action="/feedback" method="post" class="feedback-form" id="feedback-form">
+                                <span class="feedback-prompt">Was this answer helpful?</span>
+                                <input type="hidden" name="interaction_id" value="{{ interaction_id }}">
+                                <button type="submit" name="vote" value="helpful"
+                                    class="btn btn-secondary btn-sm">Helpful</button>
+                                <button type="submit" name="vote" value="not_helpful"
+                                    class="btn btn-secondary btn-sm">Not helpful</button>
+                            </form>
+                            <p class="feedback-status" id="feedback-status" role="status"></p>
+                        </section>
+
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- PDF viewer: hidden until a source is selected -->
+                <aside class="pdf-viewer" id="pdf-viewer" aria-label="Source document viewer">
+                    <div class="viewer-header">
+                        <div class="viewer-title">
+                            <p class="viewer-doc" id="viewer-doc"></p>
+                            <p class="viewer-page" id="viewer-page"></p>
+                        </div>
+                        <a class="btn btn-secondary btn-sm" id="viewer-newtab" href="#" target="_blank" rel="noopener">
+                            Open in New Tab <svg class="icon" aria-hidden="true">
+                                <use href="#i-external" />
+                            </svg>
+                        </a>
+                        <button type="button" class="icon-btn" id="viewer-close" aria-label="Close PDF viewer">
+                            <svg class="icon" aria-hidden="true">
+                                <use href="#i-x" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="viewer-body" id="viewer-body"></div>
+                </aside>
+
+            </div>
+        </section>
+
+        <!-- ============ VIEW: UPLOAD DOCUMENT (administration) ============ -->
+        <section id="view-upload" data-view-panel="upload" class="view-page" aria-labelledby="upload-title" hidden>
+            <div class="page-head">
+                <h1 id="upload-title">Upload Documents</h1>
+                <p>Add PDF documents to the collection. Uploaded files are processed and become searchable
+                    automatically.</p>
+            </div>
+
+            <div class="panel">
+                <form action="/upload" method="post" enctype="multipart/form-data" id="upload-form">
+                    <label class="file-drop" for="pdf_files" id="file-drop">
+                        <input type="file" id="pdf_files" name="pdf_files" multiple accept=".pdf,application/pdf">
+                        <svg class="icon icon-lg" aria-hidden="true">
+                            <use href="#i-upload" />
+                        </svg>
+                        <span class="file-drop-text" id="file-drop-text">Drag and drop PDF files here, or click to
+                            choose</span>
+                        <span class="file-drop-hint">PDF files only</span>
+                    </label>
+                    <button type="submit" class="btn btn-primary" id="upload-btn">Upload &amp; Process</button>
+                </form>
+
+                {% if upload_message %}<p class="notice notice-info" id="upload-notice" role="status">{{ upload_message
+                    }}</p>{% endif %}
+
+                <p class="meta-text">Currently indexed: <strong class="processed-count">{{ processed_file_count
+                        }}</strong> document(s).</p>
+            </div>
+        </section>
+
+        <!-- ============ VIEW: PROCESSED DOCUMENTS (administration) ============ -->
+        <section id="view-documents" data-view-panel="documents" class="view-page" aria-labelledby="documents-title"
+            hidden>
+            <div class="page-head">
+                <h1 id="documents-title">Processed Documents</h1>
+                <p>Documents currently indexed and available for questions.</p>
+            </div>
+
+            <div class="panel panel-flush">
+                <div class="table-wrap">
+                    <table class="doc-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Document</th>
+                                <th scope="col">Status</th>
+                                <th scope="col" class="col-action">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="docs-table-body">
+                            {% for f in processed_files %}
+                            <tr data-filename="{{ f }}">
+                                <td><a class="doc-link" href="{{ url_for('serve_upload', filename=f) }}" target="_blank"
+                                        rel="noopener">{{ f }}</a></td>
+                                <td><span class="status-badge"><svg class="icon" aria-hidden="true">
+                                            <use href="#i-check" />
+                                        </svg> Indexed</span></td>
+                                <td class="col-action">
+                                    <button type="button" class="btn btn-danger btn-sm delete-btn"
+                                        data-filename="{{ f }}" aria-label="Delete {{ f }}">
+                                        <svg class="icon" aria-hidden="true">
+                                            <use href="#i-trash" />
+                                        </svg> Delete
+                                    </button>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr class="empty-row">
+                                <td colspan="3">No documents uploaded yet.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <p class="meta-text">Deleting a document removes it from the search index and deletes its uploaded PDF file.
             </p>
         </section>
 
-        <section class="card">
-            <h2>Ask a question</h2>
-            <form action="/ask" method="post" class="ask-form" id="ask-form">
-                <textarea name="question" rows="3" placeholder="Ask a question about your uploaded documents...">{{ question or '' }}</textarea>
-                <button type="submit" class="btn btn-primary" id="ask-btn">Ask</button>
-            </form>
-            {% if ask_error %}<p class="status-message error">{{ ask_error }}</p>{% endif %}
-        </section>
-
-        {% if answer %}
-        <section class="card answer-card">
-            <div class="qa-block">
-                <div class="question-bubble">
-                    <span class="label">You asked</span>
-                    <p>{{ question }}</p>
-                </div>
-                <div class="answer-bubble">
-                    <span class="label">Answer</span>
-                    <div id="answer-content" class="markdown-body"></div>
-                    <script id="answer-raw" type="application/json">{{ answer | tojson }}</script>
-                </div>
+        <!-- ============ VIEW: HELP / ABOUT ============ -->
+        <section id="view-help" data-view-panel="help" class="view-page" aria-labelledby="help-title" hidden>
+            <div class="page-head">
+                <h1 id="help-title">Help / About</h1>
+                <p>How to use the Institutional Knowledge Assistant.</p>
             </div>
 
-            {% if not low_confidence and sources %}
-            <div class="sources">
-                <span class="label">Sources</span>
-                <ul>
-                    {% for s in sources %}
-                    <li><span class="source-name">{{ s.source }}</span> · Page {{ s.page }} <span class="score">({{ s.score }})</span></li>
-                    {% endfor %}
-                </ul>
+            <div class="panel prose">
+                <h2>Finding information</h2>
+                <ol>
+                    <li>Type a question in <strong>Ask a Question</strong> and select <strong>Ask</strong>.</li>
+                    <li>Read the generated answer.</li>
+                    <li>Under <strong>Document Sources</strong>, select <strong>View Page</strong> to open the original
+                        PDF at the page the answer was drawn from.</li>
+                </ol>
+
+                <h2>About the answers</h2>
+                <p>Answers are generated only from the documents that have been indexed. If the documents do not contain
+                    the information, the assistant may not be able to answer. Check important details against the source
+                    page.</p>
+                <p>Complete questions work better than single keywords or acronyms.</p>
+
+                <h2>Administration</h2>
+                <p><strong>Upload Document</strong> and <strong>Processed Documents</strong> are for maintaining the
+                    document collection. They are separated from the question workspace but are not access-controlled.
+                </p>
             </div>
-            {% endif %}
-
-            <form action="/feedback" method="post" class="feedback-form">
-                <input type="hidden" name="interaction_id" value="{{ interaction_id }}">
-                <button type="submit" name="vote" value="helpful" class="btn btn-ghost">👍 Helpful</button>
-                <button type="submit" name="vote" value="not_helpful" class="btn btn-ghost">👎 Not helpful</button>
-            </form>
         </section>
-        {% endif %}
 
-        {% if feedback_message %}<p class="status-message success floating">{{ feedback_message }}</p>{% endif %}
-    </div>
+    </main>
 
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
+
 </html>

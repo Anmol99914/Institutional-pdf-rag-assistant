@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
@@ -8,13 +8,14 @@ from src.embeddings import embed_query
 from src.llm import generate_answer
 from src.rag import answer_question
 from src.feedback import init_db, log_interaction, record_feedback
-
+from src.md_converter import markdown_already_exists
 
 load_dotenv()
 
 app = Flask(__name__)
 
 UPLOAD_DIR = os.path.join("data", "uploads")
+MARKDOWN_DIR = os.path.abspath(os.path.join(UPLOAD_DIR, "..", "markdown"))
 VECTOR_STORE_DIR = "vector_store"
 INDEX_PATH = os.path.join(VECTOR_STORE_DIR, "faiss.index")
 METADATA_PATH = os.path.join(VECTOR_STORE_DIR, "metadata.pkl")
@@ -43,6 +44,13 @@ def index():
         processed_files=processed_files
     )
 
+@app.route("/uploads/<path:filename>")
+def serve_upload(filename):
+    return send_from_directory(
+        os.path.abspath(UPLOAD_DIR),
+        secure_filename(filename),
+        mimetype="application/pdf"
+    )
 
 @app.route("/upload", methods=["POST"])
 def upload():
@@ -112,6 +120,10 @@ def upload():
         upload_message=message
     )
 
+def make_snippet(text, limit=240):
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[:limit].rstrip() + "…"
+
 
 @app.route("/ask", methods=["POST"])
 def ask():
@@ -148,6 +160,14 @@ def ask():
         result["low_confidence"]
     )
 
+    display_sources = [
+        {**src, "snippet": make_snippet(chunk["text"])}
+        for src, (chunk, _score) in zip(
+            result["sources"],
+            result["retrieved"]
+        )
+    ]
+
     return render_template(
         "index.html",
         processed_file_count=processed_file_count,
@@ -158,20 +178,40 @@ def ask():
         low_confidence=result["low_confidence"],
         interaction_id=interaction_id
     )
+
 @app.route("/delete/<path:filename>", methods=["POST"])
 def delete_document(filename):
     global vector_store, processed_files, processed_file_count
 
-    filename = secure_filename(filename)
+    # Match against the source names actually stored in the index.
+    indexed_sources = (
+        set(c["source"] for c in vector_store.metadata)
+        if vector_store else set()
+    )
+    source = filename if filename in indexed_sources else secure_filename(filename)
 
+    # Must be a plain file name: no folders, not empty.
+    if not source or os.path.basename(source) != source:
+        return jsonify({"success": False, "error": "Invalid filename."}), 400
+
+    # Remove vectors + metadata, then persist the index and metadata.pkl
+    removed = 0
     if vector_store is not None:
-        removed = vector_store.remove_by_source(filename)
+        removed = vector_store.remove_by_source(source)
         if removed:
             vector_store.save(INDEX_PATH, METADATA_PATH)
 
-    pdf_path = os.path.join(UPLOAD_DIR, filename)
-    if os.path.exists(pdf_path):
+    # Delete the uploaded PDF
+    pdf_path = os.path.join(UPLOAD_DIR, source)
+    pdf_deleted = os.path.isfile(pdf_path)
+    if pdf_deleted:
         os.remove(pdf_path)
+
+    # Delete only this document's Markdown file (path rule comes from md_converter)
+    md_exists, md_path = markdown_already_exists(source, MARKDOWN_DIR)
+    md_deleted = bool(md_exists and md_path and os.path.isfile(md_path))
+    if md_deleted:
+        os.remove(md_path)
 
     processed_files = (
         sorted(set(c["source"] for c in vector_store.metadata))
@@ -179,12 +219,18 @@ def delete_document(filename):
     )
     processed_file_count = len(processed_files)
 
+    if not (removed or pdf_deleted or md_deleted):
+        return jsonify({
+            "success": False,
+            "error": "Document not found.",
+            "processed_file_count": processed_file_count
+        }), 404
+
     return jsonify({
         "success": True,
-        "filename": filename,
+        "filename": source,
         "processed_file_count": processed_file_count
     })
-
 
 @app.route("/feedback", methods=["POST"])
 def feedback():
