@@ -395,7 +395,14 @@ def answer_question(
 
     top_chunk, top_semantic, top_lexical = ranked[0]
 
-    semantically_confident = top_semantic >= SIMILARITY_THRESHOLD
+    # semantically_confident = top_semantic >= SIMILARITY_THRESHOLD
+    semantically_confident = (
+        top_semantic >= 0.40
+        or (
+            top_semantic >= SIMILARITY_THRESHOLD
+            and top_lexical >= LEXICAL_FALLBACK_MIN_LEXICAL
+        )
+    )
 
     if semantically_confident:
         # Semantic ranking already found a confident match -- use it as-is.

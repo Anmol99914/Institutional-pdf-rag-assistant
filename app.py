@@ -160,13 +160,16 @@ def ask():
         result["low_confidence"]
     )
 
-    display_sources = [
-        {**src, "snippet": make_snippet(chunk["text"])}
-        for src, (chunk, _score) in zip(
-            result["sources"],
-            result["retrieved"]
-        )
-    ]
+    display_sources = []
+
+    if not result["low_confidence"]:
+        display_sources = [
+            {**src, "snippet": make_snippet(chunk["text"])}
+            for src, (chunk, _score) in zip(
+                result["sources"],
+                result["retrieved"]
+            )
+        ]
 
     return render_template(
         "index.html",
@@ -174,7 +177,7 @@ def ask():
         processed_files=processed_files,
         question=question,
         answer=result["answer"],
-        sources=result["sources"],
+        sources=display_sources,
         low_confidence=result["low_confidence"],
         interaction_id=interaction_id
     )
