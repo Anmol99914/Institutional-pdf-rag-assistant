@@ -10,7 +10,7 @@ from src.rag import answer_question
 # 1. PDF → TEXT
 # ==============================
 
-pdf_path = "data/uploads/Unit 1 - Introduction to Management.pdf"
+pdf_path = "data/uploads_backup/Unit_1.pdf"
 
 pages_data = extract_text_from_pdf(pdf_path)
 print(f"Extracted {len(pages_data)} pages with text.")
