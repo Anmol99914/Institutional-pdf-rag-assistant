@@ -469,6 +469,16 @@ body.sidebar-collapsed .main { margin-left: 0; }
     border-left: 3px solid var(--primary);
     color: var(--muted);
 }
+/* Mathematical expressions */
+.markdown-body mjx-container {
+    overflow-x: auto;
+    overflow-y: hidden;
+    margin: 10px 0 !important;
+}
+
+.markdown-body mjx-container[display="true"] {
+    margin: 16px 0 !important;
+}
 .markdown-body table { width: 100%; margin: 0 0 12px; border-collapse: collapse; font-size: 0.9375rem; display: block; overflow-x: auto; }
 .markdown-body th, .markdown-body td { padding: 8px 10px; border: 1px solid var(--border); text-align: left; }
 .markdown-body th { background: var(--canvas); }

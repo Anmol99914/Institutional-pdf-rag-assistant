@@ -9,15 +9,23 @@ document.addEventListener("DOMContentLoaded", () => {
     const raw = document.getElementById("answer-raw");
     const answerTarget = document.getElementById("answer-content");
     if (raw && answerTarget) {
-        const text = JSON.parse(raw.textContent);
-        if (window.marked) {
-            answerTarget.innerHTML = marked.parse(text);
-        } else {
-            // marked.js is loaded from a CDN; if it is unreachable, still show the answer
-            answerTarget.textContent = text;
-            answerTarget.classList.add("plain");
+    const text = JSON.parse(raw.textContent);
+
+    if (window.marked) {
+        answerTarget.innerHTML = marked.parse(text);
+
+        // Render mathematical expressions such as $$...$$ using MathJax
+        if (window.MathJax) {
+            MathJax.typesetPromise([answerTarget]).catch((err) => {
+                console.error("MathJax rendering error:", err);
+            });
         }
+    } else {
+        // marked.js is loaded from a CDN; if it is unreachable, still show the answer
+        answerTarget.textContent = text;
+        answerTarget.classList.add("plain");
     }
+}
 
     /* ------------------------------------------------------------
        2. Sidebar (collapsible on desktop, drawer on smaller screens)
