@@ -159,24 +159,6 @@
                     {% if feedback_message %}<p class="notice notice-info" role="status">{{ feedback_message }}</p>{%
                     endif %}
 
-                    {% if not answer %}
-                    <div class="examples" id="examples">
-                        <p class="examples-label">Example questions</p>
-                        <div class="chip-row">
-                            <button type="button" class="chip"
-                                data-question="What programs are offered by the institution?">What programs are offered
-                                by the institution?</button>
-                            <button type="button" class="chip" data-question="What are the admission requirements?">What
-                                are the admission requirements?</button>
-                            <button type="button" class="chip"
-                                data-question="When was the institution established?">When was the institution
-                                established?</button>
-                            <button type="button" class="chip" data-question="What facilities are available?">What
-                                facilities are available?</button>
-                        </div>
-                    </div>
-                    {% endif %}
-
                     <!-- Loading state (shown by script.js while the page waits for the answer) -->
                     <div class="loading-panel" id="loading-panel" role="status" aria-live="polite" hidden>
                         <span class="spinner" aria-hidden="true"></span>
