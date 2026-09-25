@@ -114,9 +114,9 @@ def _lexical_relevance(question, chunk_text):
     # If the question contains a specific name and the chunk
     # contains that name, strongly prefer that chunk.
     question_names = re.findall(
-        r"\b[A-Za-z]{3,}\b",
-        question
-    )
+    r"\b[A-Z][a-zA-Z]{2,}\b",
+    question
+)
 
     for name in question_names:
         name_lower = name.lower()
@@ -318,7 +318,7 @@ def _filter_relevant_results(question, ranked_results, top_k):
             ]
 
     # Existing semantic filtering for everything else.
-    best_score = ranked_results[0][1]
+    best_score = max(item[1] for item in ranked_results)
     cutoff = best_score * SOURCE_RELEVANCE_RATIO
 
     relevant = [
@@ -417,6 +417,10 @@ def answer_question(
             rest = [
                 r for r in ranked
                 if r is not lexical_best
+                and (
+                    r[1] >= SIMILARITY_THRESHOLD
+                    or r[2] >= LEXICAL_FALLBACK_MIN_LEXICAL
+                )
             ]
 
             selected = [
